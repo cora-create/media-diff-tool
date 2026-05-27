@@ -52,7 +52,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
             request_body = json.dumps({
-                "model": "claude-sonnet-4-20250514",
+                "model": "claude-sonnet-4-6",
                 "max_tokens": 1000,
                 "messages": [{"role": "user", "content": prompt_text}]
             }).encode("utf-8")

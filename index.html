@@ -318,6 +318,7 @@ function renderReport(diffs, unchanged, narrative) {
     <div class="narrative">${linesHtml || '<div class="narrative-line">No changes detected.</div>'}</div>
     <div class="actions-row">
       <button class="action-btn" id="resetBtn">← Compare different files</button>
+      <button class="action-btn" id="copyBtn">📋 Copy report</button>
       <button class="action-btn" onclick="window.print()">🖨 Print / Save as PDF</button>
     </div>
   `;
@@ -330,6 +331,17 @@ function renderReport(diffs, unchanged, narrative) {
     r.style.display = 'none';
     document.getElementById('errorBox').style.display = 'none';
     updateBtn();
+  });
+
+  document.getElementById('copyBtn').addEventListener('click', () => {
+    const btn = document.getElementById('copyBtn');
+    navigator.clipboard.writeText(lines.join('\n')).then(() => {
+      btn.textContent = '✓ Copied!';
+      setTimeout(() => { btn.textContent = '📋 Copy report'; }, 2000);
+    }).catch(() => {
+      btn.textContent = 'Copy failed';
+      setTimeout(() => { btn.textContent = '📋 Copy report'; }, 2000);
+    });
   });
 }
 </script>

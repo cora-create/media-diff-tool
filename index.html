@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Media Spend Diff Report</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Sora:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f0f11; --surface: #1a1a1f; --surface2: #222228;
+    --border: rgba(255,255,255,0.08); --border2: rgba(255,255,255,0.14);
+    --text: #f0eff4; --muted: #888899; --accent: #7c6dfa; --accent-dim: rgba(124,109,250,0.15);
+    --green: #3ddc84; --green-dim: rgba(61,220,132,0.1);
+    --red: #ff6b6b; --red-dim: rgba(255,107,107,0.1);
+    --amber: #fbbf24; --amber-dim: rgba(251,191,36,0.1);
+    --radius: 10px; --font: 'Sora', sans-serif; --mono: 'DM Mono', monospace;
+  }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; min-height: 100vh; }
+  #app { max-width: 860px; margin: 0 auto; padding: 48px 24px 80px; }
+
+  .header { margin-bottom: 36px; }
+  .header h1 { font-size: 24px; font-weight: 600; letter-spacing: -0.4px; }
+  .header p { color: var(--muted); font-size: 13px; margin-top: 8px; line-height: 1.7; max-width: 580px; }
+  .header-rule { height: 1px; background: var(--border); margin-top: 24px; }
+
+  .step-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--accent); font-weight: 500; margin-bottom: 10px; margin-top: 28px; }
+
+  .upload-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .drop-zone {
+    border: 1.5px dashed var(--border2); border-radius: var(--radius);
+    padding: 28px 16px; text-align: center; cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    background: var(--surface); position: relative;
+  }
+  .drop-zone:hover, .drop-zone.over { border-color: var(--accent); background: var(--accent-dim); }
+  .drop-zone.loaded { border-style: solid; border-color: var(--accent); }
+  .drop-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+  .drop-icon { font-size: 26px; margin-bottom: 8px; }
+  .drop-sublabel { font-size: 12px; color: var(--muted); }
+  .drop-name { font-size: 11px; color: var(--accent); font-family: var(--mono); margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 8px; }
+  .file-tag { display: inline-block; font-size: 11px; font-weight: 500; padding: 2px 9px; border-radius: 20px; margin-bottom: 8px; }
+  .file-tag.v1 { background: rgba(124,109,250,0.2); color: #a89fff; }
+  .file-tag.v2 { background: rgba(61,220,132,0.15); color: #3ddc84; }
+
+  .compare-btn {
+    width: 100%; padding: 14px; background: var(--accent); color: #fff;
+    border: none; border-radius: var(--radius); font-family: var(--font);
+    font-size: 14px; font-weight: 500; cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s; margin-top: 20px;
+  }
+  .compare-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .compare-btn:not(:disabled):hover { opacity: 0.88; }
+  .compare-btn:not(:disabled):active { transform: scale(0.99); }
+
+  .status { text-align: center; color: var(--muted); font-size: 13px; margin: 24px 0; font-family: var(--mono); }
+  .status span { animation: pulse 1.4s ease-in-out infinite; display: inline-block; }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.4} }
+
+  .report { margin-top: 32px; }
+
+  .summary-cards {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 12px; margin-bottom: 24px;
+  }
+  .scard { background: var(--surface); border: 1px solid var(--border2); border-radius: var(--radius); padding: 16px; text-align: center; }
+  .scard-val { font-size: 26px; font-weight: 600; font-family: var(--mono); }
+  .scard-lbl { font-size: 11px; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.6px; }
+  .scard.changed .scard-val { color: var(--amber); }
+  .scard.new .scard-val { color: var(--green); }
+  .scard.gone .scard-val { color: var(--red); }
+  .scard.same .scard-val { color: var(--muted); }
+
+  .narrative-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); margin-bottom: 10px; }
+  .narrative { margin-bottom: 24px; }
+  .narrative-line {
+    padding: 11px 15px; margin-bottom: 7px; border-radius: 8px;
+    font-size: 13px; line-height: 1.6;
+    background: var(--surface); border-left: 3px solid var(--border2); color: var(--text);
+  }
+  .narrative-line.line-up { border-color: var(--green); background: var(--green-dim); }
+  .narrative-line.line-down { border-color: var(--red); background: var(--red-dim); }
+  .narrative-line.line-new { border-color: var(--accent); background: var(--accent-dim); }
+  .narrative-line.line-gone { border-color: var(--muted); background: var(--surface2); color: var(--muted); }
+
+  .error-box {
+    background: var(--red-dim); border: 1px solid var(--red); border-radius: var(--radius);
+    padding: 14px 18px; font-size: 13px; color: var(--red); margin-top: 16px; line-height: 1.6;
+  }
+
+  .actions-row { display: flex; gap: 10px; margin-top: 24px; flex-wrap: wrap; }
+  .action-btn {
+    background: transparent; border: 1px solid var(--border2);
+    color: var(--muted); padding: 9px 18px; border-radius: 8px; font-family: var(--font);
+    font-size: 13px; cursor: pointer; transition: color 0.2s;
+  }
+  .action-btn:hover { color: var(--text); }
+
+  @media print {
+    .upload-row, .step-label, .compare-btn, .actions-row { display: none !important; }
+    body { background: #fff; color: #000; }
+    .narrative-line { border: 1px solid #ccc; background: #fff !important; color: #000 !important; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="header">
+    <h1>Media spend diff report</h1>
+    <p>Upload two versions of the competitive tracking spreadsheet. The tool reads the Summary tab and reports changes in CTV and Digital totals per advertiser.</p>
+    <div class="header-rule"></div>
+  </div>
+
+  <div class="step-label">Upload files</div>
+  <div class="upload-row">
+    <div class="drop-zone" id="zone1">
+      <input type="file" accept=".xlsx,.xls" id="file1" />
+      <div class="drop-icon">📄</div>
+      <div><span class="file-tag v1">Version 1</span></div>
+      <div class="drop-sublabel">Previous version</div>
+      <div class="drop-name" id="name1"></div>
+    </div>
+    <div class="drop-zone" id="zone2">
+      <input type="file" accept=".xlsx,.xls" id="file2" />
+      <div class="drop-icon">📋</div>
+      <div><span class="file-tag v2">Version 2</span></div>
+      <div class="drop-sublabel">Updated version</div>
+      <div class="drop-name" id="name2"></div>
+    </div>
+  </div>
+
+  <button class="compare-btn" id="compareBtn" disabled>Generate diff report</button>
+  <div class="status" id="status" style="display:none"><span id="statusText">Reading Summary tab…</span></div>
+  <div id="errorBox" style="display:none" class="error-box"></div>
+  <div class="report" id="report" style="display:none"></div>
+</div>
+
+<script>
+let data1 = null, data2 = null;
+
+function parseSummary(workbook) {
+  const sheetName = workbook.SheetNames.find(n => n.trim().toLowerCase() === 'summary');
+  if (!sheetName) throw new Error('No "Summary" sheet found in this file.');
+  const ws = workbook.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+  const result = {};
+  let currentAdvertiser = null;
+
+  for (const row of rows) {
+    const colC = String(row[2] || '').trim().replace(/\n/g, ' ');
+    const colD = String(row[3] || '').trim();
+    const colE = row[4];
+
+    if (colC) currentAdvertiser = colC;
+
+    if (currentAdvertiser && (colD === 'CTV' || colD === 'Digital')) {
+      if (!result[currentAdvertiser]) result[currentAdvertiser] = { CTV: 0, Digital: 0 };
+      const val = parseFloat(colE) || 0;
+      result[currentAdvertiser][colD] += val;
+    }
+  }
+  return result;
+}
+
+function readFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const wb = XLSX.read(e.target.result, { type: 'array' });
+        resolve(parseSummary(wb));
+      } catch(err) { reject(err); }
+    };
+    reader.onerror = () => reject(new Error('Could not read file.'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function fmt(val) {
+  if (!val || val === 0) return '$0';
+  return '$' + val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function setupZone(inputId, zoneId, nameId, num) {
+  const input = document.getElementById(inputId);
+  const zone = document.getElementById(zoneId);
+  async function handleFile(file) {
+    if (!file) return;
+    try {
+      const parsed = await readFile(file);
+      document.getElementById(nameId).textContent = file.name;
+      zone.classList.add('loaded');
+      if (num === 1) data1 = parsed; else data2 = parsed;
+      updateBtn();
+    } catch(err) { showError(err.message); }
+  }
+  input.addEventListener('change', () => handleFile(input.files[0]));
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+  zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('over'); handleFile(e.dataTransfer.files[0]); });
+}
+
+setupZone('file1','zone1','name1',1);
+setupZone('file2','zone2','name2',2);
+
+function updateBtn() {
+  document.getElementById('compareBtn').disabled = !(data1 && data2);
+}
+
+function showError(msg) {
+  const el = document.getElementById('errorBox');
+  el.textContent = '⚠ ' + msg;
+  el.style.display = 'block';
+}
+
+document.getElementById('compareBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('compareBtn');
+  btn.disabled = true;
+  document.getElementById('status').style.display = 'block';
+  document.getElementById('report').style.display = 'none';
+  document.getElementById('errorBox').style.display = 'none';
+
+  const msgs = ['Reading Summary tab…', 'Comparing advertisers…', 'Calculating deltas…', 'Generating report…'];
+  let si = 0;
+  const stEl = document.getElementById('statusText');
+  const ticker = setInterval(() => { si = (si+1) % msgs.length; stEl.textContent = msgs[si]; }, 1600);
+
+  const allAdvertisers = new Set([...Object.keys(data1), ...Object.keys(data2)]);
+  const diffs = [];
+
+  for (const adv of allAdvertisers) {
+    const v1 = data1[adv] || { CTV: 0, Digital: 0 };
+    const v2 = data2[adv] || { CTV: 0, Digital: 0 };
+    const isNew = !data1[adv];
+    const isGone = !data2[adv];
+    if (v1.CTV !== v2.CTV || v1.Digital !== v2.Digital || isNew || isGone) {
+      diffs.push({ advertiser: adv, v1_ctv: v1.CTV, v2_ctv: v2.CTV, v1_dig: v1.Digital, v2_dig: v2.Digital, isNew, isGone });
+    }
+  }
+
+  const unchanged = allAdvertisers.size - diffs.length;
+
+  const diffText = diffs.map(d =>
+    `${d.advertiser}: CTV ${fmt(d.v1_ctv)} → ${fmt(d.v2_ctv)}, Digital ${fmt(d.v1_dig)} → ${fmt(d.v2_dig)}${d.isNew ? ' [NEW]' : ''}${d.isGone ? ' [REMOVED]' : ''}`
+  ).join('\n');
+
+  const prompt = `You are a political media analyst. Here are the changes in CTV and Digital spend between two versions of a competitive tracking spreadsheet:
+
+${diffText || 'No changes detected.'}
+
+Write the report as one sentence per change, strictly following these formats:
+- "[Advertiser]'s Digital spend increased by $[amount]."
+- "[Advertiser]'s Digital spend decreased by $[amount]."
+- "[Advertiser]'s CTV spend increased by $[amount]."
+- "[Advertiser]'s CTV spend decreased by $[amount]."
+- "[Advertiser] is a new advertiser with $[amount] in CTV spend and $[amount] in Digital spend."
+- "[Advertiser] has been removed. They previously had $[amount] in CTV spend and $[amount] in Digital spend."
+
+Rules:
+- CTV and Digital are always separate sentences if both changed for the same advertiser.
+- Use the exact dollar amounts provided, formatted with commas and two decimal places.
+- No intro line, no summary paragraph, no extra commentary — just the sentences, one per line.
+- If no changes, write "No changes detected."`;
+
+  let narrative = '';
+  try {
+    const res = await fetch('/api/claude', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt })
+    });
+    const raw = await res.json();
+    if (raw.error) throw new Error(raw.error.message);
+    narrative = (raw.content || []).map(b => b.text || '').join('').trim();
+  } catch(err) {
+    clearInterval(ticker);
+    document.getElementById('status').style.display = 'none';
+    showError('Error generating report: ' + err.message);
+    btn.disabled = false;
+    updateBtn();
+    return;
+  }
+
+  clearInterval(ticker);
+  document.getElementById('status').style.display = 'none';
+  renderReport(diffs, unchanged, narrative);
+  btn.disabled = false;
+  updateBtn();
+});
+
+function renderReport(diffs, unchanged, narrative) {
+  const r = document.getElementById('report');
+  r.style.display = 'block';
+
+  const changed = diffs.filter(d => !d.isNew && !d.isGone);
+  const newAdvs = diffs.filter(d => d.isNew);
+  const goneAdvs = diffs.filter(d => d.isGone);
+
+  const lines = narrative.split('\n').map(l => l.trim()).filter(l => l);
+  const linesHtml = lines.map(l => {
+    const cls = /increased/i.test(l) ? 'line-up'
+      : /decreased/i.test(l) ? 'line-down'
+      : /new advertiser/i.test(l) ? 'line-new'
+      : /removed/i.test(l) ? 'line-gone' : '';
+    return `<div class="narrative-line ${cls}">${l}</div>`;
+  }).join('');
+
+  r.innerHTML = `
+    <div class="summary-cards">
+      <div class="scard changed"><div class="scard-val">${changed.length}</div><div class="scard-lbl">Changed</div></div>
+      <div class="scard new"><div class="scard-val">${newAdvs.length}</div><div class="scard-lbl">New</div></div>
+      <div class="scard gone"><div class="scard-val">${goneAdvs.length}</div><div class="scard-lbl">Removed</div></div>
+      <div class="scard same"><div class="scard-val">${unchanged}</div><div class="scard-lbl">Unchanged</div></div>
+    </div>
+    <div class="narrative-label">Report</div>
+    <div class="narrative">${linesHtml || '<div class="narrative-line">No changes detected.</div>'}</div>
+    <div class="actions-row">
+      <button class="action-btn" id="resetBtn">← Compare different files</button>
+      <button class="action-btn" onclick="window.print()">🖨 Print / Save as PDF</button>
+    </div>
+  `;
+
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    data1 = null; data2 = null;
+    ['zone1','zone2'].forEach(id => document.getElementById(id).classList.remove('loaded'));
+    ['name1','name2'].forEach(id => document.getElementById(id).textContent = '');
+    ['file1','file2'].forEach(id => document.getElementById(id).value = '');
+    r.style.display = 'none';
+    document.getElementById('errorBox').style.display = 'none';
+    updateBtn();
+  });
+}
+</script>
+</body>
+</html>

@@ -160,12 +160,28 @@ function parseSheet(workbook, sheetName) {
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
   const result = {};
   let currentAdvertiser = null;
+  let pendingName = null;
+
+  const isParenthetical = s => /^\(.*\)$/.test(s);
+  const mediaTypes = new Set(['Broadcast','Cable','Radio','Satellite','CTV','Digital','Addressable']);
+
   for (const row of rows) {
-    const colC = String(row[2] || '').trim().replace(/\n/g, ' ');
+    const rawC = String(row[2] || '').trim().replace(/\n/g, ' ');
     const colD = String(row[3] || '').trim();
     const colE = row[4];
-    if (colC) currentAdvertiser = colC;
+
+    if (rawC && !mediaTypes.has(rawC)) {
+      if (isParenthetical(rawC) && pendingName) {
+        currentAdvertiser = pendingName + ' ' + rawC;
+        pendingName = null;
+      } else if (!isParenthetical(rawC)) {
+        pendingName = rawC;
+        currentAdvertiser = rawC;
+      }
+    }
+
     if (currentAdvertiser && (colD === 'CTV' || colD === 'Digital')) {
+      pendingName = null;
       if (!result[currentAdvertiser]) result[currentAdvertiser] = { CTV: 0, Digital: 0 };
       result[currentAdvertiser][colD] += parseFloat(colE) || 0;
     }

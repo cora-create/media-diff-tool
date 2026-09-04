@@ -159,8 +159,11 @@ function parseSheet(workbook, sheetName) {
   const ws = workbook.Sheets[match];
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
   const result = {};
-  let currentAdvertiser = null;  // the clean base name, e.g. "Lone Star Liberty PAC"
-  let fullAdvertiser = null;     // base + parenthetical if present, e.g. "Lone Star Liberty PAC (Pro-Paxton)"
+
+  // baseName: the last real advertiser name seen (non-parenthetical), e.g. "Lone Star Rising PAC"
+  // fullName: baseName + parenthetical if one appeared on the CTV/Digital row, else just baseName
+  let baseName = null;
+  let pendingParen = null; // parenthetical seen in col C before a CTV/Digital row
 
   const isParenthetical = s => /^\(.*\)$/.test(s);
   const mediaTypes = new Set(['Broadcast','Cable','Radio','Satellite','CTV','Digital','Addressable']);
@@ -172,20 +175,27 @@ function parseSheet(workbook, sheetName) {
 
     if (rawC && !mediaTypes.has(rawC)) {
       if (isParenthetical(rawC)) {
-        // Parenthetical in col C — always a suffix for the current advertiser, never a new one
-        // This handles both: parenthetical before CTV row, or embedded in the cell with \n
-        fullAdvertiser = currentAdvertiser ? currentAdvertiser + ' ' + rawC : rawC;
+        // This parenthetical belongs to the baseName directly above it
+        pendingParen = rawC;
       } else {
-        // A real advertiser name — could be "Name" alone or "Name\n(Paren)" merged in one cell
-        const parts = rawC.split(/\s+(?=\()/).map(p => p.trim()).filter(Boolean);
-        currentAdvertiser = parts[0];
-        fullAdvertiser = parts.length > 1 ? parts.join(' ') : parts[0];
+        // A real new advertiser name — reset everything
+        // Handle cells where name and paren are merged: "Lone Star Rising PAC (Pro-Talarico)"
+        const parenIdx = rawC.indexOf(' (');
+        if (parenIdx !== -1) {
+          baseName = rawC.slice(0, parenIdx).trim();
+          pendingParen = rawC.slice(parenIdx).trim();
+        } else {
+          baseName = rawC;
+          pendingParen = null;
+        }
       }
     }
 
-    if (fullAdvertiser && (colD === 'CTV' || colD === 'Digital')) {
-      if (!result[fullAdvertiser]) result[fullAdvertiser] = { CTV: 0, Digital: 0 };
-      result[fullAdvertiser][colD] += parseFloat(colE) || 0;
+    if (baseName && (colD === 'CTV' || colD === 'Digital')) {
+      // Build full name: baseName + whatever parenthetical is in scope for this row
+      const fullName = pendingParen ? baseName + ' ' + pendingParen : baseName;
+      if (!result[fullName]) result[fullName] = { CTV: 0, Digital: 0 };
+      result[fullName][colD] += parseFloat(colE) || 0;
     }
   }
   return result;
